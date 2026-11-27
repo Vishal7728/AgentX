@@ -5,18 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AgentX Capture</title>
   <style>
-    body{font:14px system-ui,sans-serif;width:280px;margin:0;padding:16px;color:#321d27;background:#fffaf8}
+    body{font:14px system-ui,sans-serif;width:290px;margin:0;padding:16px;color:#321d27;background:#fffaf8}
     h1{font:600 18px Georgia,serif;margin:0 0 8px}
     p{line-height:1.45;color:#765e68}
     button{width:100%;padding:11px;border:0;border-radius:9px;background:#762d49;color:white;font-weight:600;cursor:pointer}
     button:disabled{opacity:.55;cursor:wait}
-    #status{min-height:36px;margin-top:10px;font-size:12px}
+    #status{min-height:38px;margin-top:10px;font-size:12px}
   </style>
 </head>
 <body>
   <h1>AgentX Capture</h1>
-  <p>Open an individual X post in your normal Chrome tab, then capture the visible browser viewport.</p>
-  <button id="capture">Capture visible tab</button>
+  <p>Open an individual X post. Capture saves the first visible media image in that post, or the post card if no media image is detected.</p>
+  <button id="capture">Capture post media</button>
   <div id="status" role="status"></div>
   <script src="popup.js"></script>
 </body>
