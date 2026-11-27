@@ -1,23 +1,11 @@
-# AgentX manual browser capture (local-first)
+# AgentX local browser screenshot capture
 
-## What this mode does
+## Purpose
 
-This companion launches a visible Chromium browser with a persistent local profile.
-You sign in yourself, navigate to a post yourself, and explicitly press Enter in the
-terminal to capture image elements from the first visible post. It does not crawl
-profiles, auto-scroll, open posts, or enumerate a timeline.
-
-This is a **screenshot archive**, not an original-media downloader. A screenshot
-cannot restore source pixels, may be affected by display scaling/cropping, and must
-not be labelled as the original upload. The companion records browser-reported
-natural dimensions, screenshot dimensions, source page, capture time, and SHA-256.
-It rejects screenshots that fail basic dimension/aspect-ratio checks. Review every
-capture before relying on it.
-
-Only use this with content and accounts you are authorized to access and archive,
-and only where the platform permits the activity. Do not use it to bypass API
-credits, access controls, rate limits, or platform restrictions. If automated
-browser capture is not permitted for the account/content, do not use this mode.
+This mode uses the user's own PC and a visible Chromium browser. It does not use
+an X API bearer token and does not download image URLs from X. It saves screenshots
+of image elements rendered in the browser. A screenshot is not the original upload
+and cannot recover pixels that X does not render.
 
 ## Setup (Windows PowerShell)
 
@@ -31,36 +19,49 @@ pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-3. Start the visible browser:
+3. Launch AgentX's local capture browser with the profile URL:
 
 ```powershell
 $env:PYTHONPATH = "backend"
-python -m app.browser_capture --url https://x.com/
+python -m app.browser_capture --url https://x.com/username
 ```
 
-4. Sign in in the opened browser if required. Navigate manually to the authorized post.
-5. Return to the terminal and press Enter to capture visible image elements. Type `q`
-   to close the browser.
+On macOS/Linux, activate the virtual environment and run the same Python command.
+The browser profile is stored under `storage/browser-profile/`, so a user can sign
+in once and reuse the local session. Keep this directory private.
 
-Files are written to `storage/screenshots/<post-id-or-time>/`. Each PNG has a
-sidecar JSON manifest. The persistent browser profile is in
-`storage/browser-profile/`; keep it private and never commit it. Sign out in the
-browser when finished.
+## Capture workflow
 
-## Full-image capture design
+- AgentX opens the submitted X URL in a visible browser on this PC.
+- The user signs in or completes any verification directly with X.
+- The user scrolls to the post they want to capture.
+- Press Enter in the AgentX terminal to capture images in the first visible post.
+- Type `q` to close the browser.
 
-- Detect loaded image elements in the first visible post.
-- Read natural dimensions and visible bounding box before capture.
-- Capture the image element itself, not the entire viewport.
-- Validate the saved PNG and compare aspect ratios to detect obvious clipping.
-- Save a SHA-256 digest and dimensions in a sidecar manifest.
-- Never upscale or overwrite the capture. Enhancement should be a separate,
-  optional derivative pipeline, preserving the screenshot byte-for-byte.
+AgentX does not automate timeline traversal, auto-scroll, solve CAPTCHA, bypass
+login, access controls, or rate limits. Use browser automation only where the
+platform's current terms and your authorization permit it.
 
-## Limitations
+## Local output and integrity
 
-A web page can display a resized or transformed rendition. Element screenshots are
-not proof of original upload quality. Multi-image posts are captured as separate
-visible image elements; image carousels or hidden slides must be navigated by the
-user and captured separately. This companion intentionally does not automate
-timeline browsing.
+Screenshots are saved to `storage/screenshots/<post-id-or-time>/`. Each PNG has
+a JSON sidecar containing source page, capture time, browser natural dimensions,
+screenshot dimensions and SHA-256. The capture is rejected if the PNG cannot be
+decoded or its aspect ratio differs substantially from the browser-reported image.
+
+The screenshot is a rendered browser capture, not the original uploaded image.
+X may resize, crop, transform or omit pixels before rendering. Review captures
+before relying on them. The persistent browser profile contains login cookies:
+never commit it, share it, or store it in a public/synced folder.
+
+## Technical validation only
+
+No subject-matter or sensitivity classification is performed. Validation is limited
+to image load state, visibility, dimensions, PNG decoding, aspect-ratio sanity and
+cryptographic hash generation.
+
+## Optional enhancement
+
+If the local enhancement utility is used, it must write a separate derivative.
+It must never overwrite the source screenshot. The untouched PNG remains the archive
+master.
