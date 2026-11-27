@@ -1,15 +1,18 @@
-"""Local, visible-browser screenshot capture for user-authorized X pages.
+"""API-discovered, local-browser screenshot archive.
 
-This tool opens the supplied profile/post URL in a persistent Chromium session.
-The user remains in control of scrolling and explicitly confirms each capture.
-It does not call the X API, crawl timelines, auto-scroll, or bypass login/CAPTCHA.
+X API is used only to enumerate posts the configured bearer token can access.
+A visible Chromium session on this PC opens each discovered post and screenshots
+rendered image elements. This mode is gated by an explicit platform-permission
+confirmation. It never calls undocumented endpoints or bypasses access controls.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -24,20 +27,78 @@ ALLOWED_HOSTS = {"x.com", "www.x.com", "twitter.com", "www.twitter.com"}
 MIN_WIDTH, MIN_HEIGHT = 160, 100
 
 
+def load_local_env() -> None:
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        return
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 def safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", value)[:80] or "capture"
 
 
-def validate_url(value: str) -> str:
+def validate_profile_url(value: str) -> tuple[str, str]:
     parsed = urlparse(value)
     if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS:
         raise ValueError("Only an https://x.com or https://twitter.com URL is accepted.")
-    return value
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) != 1 or not re.fullmatch(r"[A-Za-z0-9_]{1,15}", parts[0]):
+        raise ValueError("Enter a profile URL such as https://x.com/username.")
+    if parts[0].lower() in {"home", "explore", "search", "settings", "i", "messages", "notifications"}:
+        raise ValueError("The URL does not identify a profile.")
+    return parts[0], f"https://x.com/{parts[0]}"
 
 
-def visible_image_candidates(article):
-    candidates = []
+def discover_posts(username: str, max_posts: int | None) -> list[dict]:
+    # Import after loading .env so the API module sees the local bearer token.
+    from app.x_api import resolve_user, get_user_posts
+
+    user = resolve_user(username)
+    if not user or not user.get("id"):
+        raise RuntimeError("X API did not return a user ID for this profile.")
+    user_id = str(user["id"])
+    posts: list[dict] = []
+    token = None
+    seen: set[str] = set()
+    while True:
+        page = get_user_posts(user_id, token)
+        for item in page.get("data") or []:
+            post_id = str(item.get("id") or "")
+            if not post_id or post_id in seen:
+                continue
+            seen.add(post_id)
+            posts.append({
+                "id": post_id,
+                "url": f"https://x.com/{username}/status/{post_id}",
+                "created_at": item.get("created_at"),
+            })
+            if max_posts and len(posts) >= max_posts:
+                return posts
+        token = (page.get("meta") or {}).get("next_token")
+        if not token:
+            break
+        # Conservative pacing between documented API page requests.
+        time.sleep(2.0)
+    return posts
+
+
+def capture_visible_post(page, output: Path, post: dict) -> int:
+    page.goto(post["url"], wait_until="domcontentloaded", timeout=60000)
+    try:
+        page.locator("article").first.wait_for(state="visible", timeout=15000)
+    except Exception:
+        print(f"  SKIP {post['id']}: no visible post article (login/visibility/access may be required).")
+        return 0
+
+    article = page.locator("article").first
     images = article.locator("img")
+    candidates = []
     for index in range(images.count()):
         img = images.nth(index)
         try:
@@ -52,106 +113,110 @@ def visible_image_candidates(article):
                 candidates.append((img, info))
         except Exception:
             continue
-    return candidates
 
-
-def capture_article(page, output: Path) -> int:
-    articles = page.locator("article")
-    if articles.count() == 0:
-        print("No post is visible. Scroll to a post in the browser and retry.")
-        return 0
-    article = articles.first
-    if not article.is_visible():
-        print("The first post is not visible. Scroll manually and retry.")
-        return 0
-
-    candidates = visible_image_candidates(article)
     if not candidates:
-        print("No fully loaded, visible image was detected in this post.")
+        print(f"  NO IMAGE {post['id']}")
         return 0
 
-    post_url = page.url
-    match = re.search(r"/status/(\d+)", post_url)
-    post_id = match.group(1) if match else datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    folder = output / safe_name(post_id)
+    folder = output / safe_name(post["id"])
     folder.mkdir(parents=True, exist_ok=True)
     saved = 0
-
     for index, (img, info) in enumerate(candidates, start=1):
         target = folder / f"image-{index:02d}.png"
+        if target.exists() and target.with_suffix(".json").exists():
+            print(f"  EXISTS {post['id']} image {index}")
+            continue
         try:
-            img.scroll_into_view_if_needed(timeout=3000)
-            img.screenshot(path=str(target), animations="disabled", timeout=10000)
+            img.screenshot(path=str(target), animations="disabled", timeout=12000)
             with Image.open(target) as shot:
                 shot.load()
                 sw, sh = shot.size
             if (sw < 1 or sh < 1 or
                     abs((sw / sh) - (info["w"] / info["h"])) > 0.08):
                 target.unlink(missing_ok=True)
-                print(f"Skipped image {index}: screenshot boundary check failed.")
+                print(f"  REJECTED {post['id']} image {index}: boundary check failed")
                 continue
             digest = hashlib.sha256(target.read_bytes()).hexdigest()
             metadata = {
-                "source_page": post_url,
+                "source_page": post["url"],
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "capture_method": "visible_img_element_screenshot",
                 "browser_natural_dimensions": [info["w"], info["h"]],
                 "screenshot_dimensions": [sw, sh],
                 "sha256": digest,
                 "alt": info["alt"],
-                "note": "Screenshot is not the original uploaded file.",
+                "note": "Rendered screenshot, not the original uploaded file.",
             }
-            target.with_suffix(".json").write_text(
-                json.dumps(metadata, indent=2), encoding="utf-8"
-            )
+            target.with_suffix(".json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
             saved += 1
         except Exception as exc:
             target.unlink(missing_ok=True)
-            print(f"Image {index} failed verification: {exc}")
-    print(f"Saved {saved}/{len(candidates)} verified screenshot(s): {folder}")
+            print(f"  FAILED {post['id']} image {index}: {exc}")
+    print(f"  SAVED {post['id']}: {saved}/{len(candidates)} screenshot(s)")
     return saved
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Open X locally and capture user-selected visible post images."
+        description="Discover accessible X posts via API and screenshot them in local Chromium."
     )
-    parser.add_argument("--url", required=True, help="X profile or post URL to open")
+    parser.add_argument("--url", required=True, help="X profile URL")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--max-posts", type=int, default=0, help="Optional test limit; 0 means all API-accessible posts")
+    parser.add_argument("--confirm-platform-permission", action="store_true",
+                        help="Confirm you are authorized and X's current terms permit this automated browser workflow.")
     args = parser.parse_args()
 
+    if not args.confirm_platform_permission:
+        parser.error("Before automation, review X's current terms and pass --confirm-platform-permission only if this activity is permitted.")
+    if args.max_posts < 0:
+        parser.error("--max-posts cannot be negative.")
+
     try:
-        url = validate_url(args.url)
+        username, profile_url = validate_profile_url(args.url)
     except ValueError as exc:
         parser.error(str(exc))
+
+    load_local_env()
+    if not os.environ.get("X_BEARER_TOKEN") or os.environ.get("X_BEARER_TOKEN") == "replace_me":
+        parser.error("Set X_BEARER_TOKEN in the repository .env file first.")
 
     output = Path(args.output).expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    max_posts = args.max_posts or None
+
+    print(f"Discovering posts for @{username} through the configured X API token…")
+    posts = discover_posts(username, max_posts)
+    print(f"Discovered {len(posts)} API-accessible posts.")
+    if not posts:
+        print("No posts were returned by the API.")
+        return
 
     with sync_playwright() as playwright:
         context = playwright.chromium.launch_persistent_context(
-            str(PROFILE_DIR),
-            headless=False,
+            str(PROFILE_DIR), headless=False,
             viewport={"width": 1440, "height": 1000},
-            device_scale_factor=1,
-            accept_downloads=False,
+            device_scale_factor=1, accept_downloads=False,
         )
         page = context.pages[0] if context.pages else context.new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            print("\nAgentX local browser is ready.")
-            print("Sign in yourself if X asks. Complete any verification yourself.")
-            print("Scroll manually to a post you are authorized to archive.")
-            print("Press Enter here to screenshot the first visible post; type q to exit.\n")
-            while True:
-                command = input("AgentX > ").strip().lower()
-                if command in {"q", "quit", "exit"}:
-                    break
-                capture_article(page, output)
+            page.goto(profile_url, wait_until="domcontentloaded", timeout=60000)
+            print("\nLocal browser opened. Sign in yourself if required.")
+            print("If login/CAPTCHA/access confirmation appears, complete it yourself in the browser.")
+            input("When the profile is ready, press Enter here to begin automatic post capture… ")
+            total = 0
+            for index, post in enumerate(posts, start=1):
+                print(f"[{index}/{len(posts)}] {post['url']}")
+                total += capture_visible_post(page, output, post)
+                # Deliberate pacing; this is not a rate-limit workaround.
+                time.sleep(2.5)
+            print(f"\nFinished. Captured {total} verified screenshot(s) from {len(posts)} API-accessible posts.")
+            print(f"Local archive: {output}")
         finally:
             context.close()
 
 
 if __name__ == "__main__":
+    load_local_env()
     main()
