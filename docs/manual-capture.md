@@ -1,95 +1,48 @@
-# AgentX automatic local-browser screenshot archive
+# Manual local-browser screenshot capture
 
 ## What this mode does
 
-AgentX uses the configured X API bearer token to discover the posts returned by
-the authorized user-timeline endpoint. It then opens each discovered post URL in
-a visible Chromium browser running on the user's PC and captures rendered X media
-images from the post. Screenshots are stored locally with JSON manifests and
-SHA-256 checksums.
+AgentX opens an X profile in a visible Chromium browser on your PC. You manually
+navigate to an individual post, then explicitly trigger a screenshot from the
+Command Prompt. It does not require an X API bearer token or API credits.
 
-This is a screenshot archive, not an original-media downloader. The browser can
-only capture pixels X actually renders; screenshots are not the original uploaded
-bytes and may be resized or transformed.
+This is a screenshot archive, not an original-media downloader. The browser
+captures rendered pixels that are visible in the currently open post. X may
+resize, crop or transform the displayed media.
 
-## Requirements
+## Run on Windows
 
-- Python 3.11+
-- An X developer bearer token with sufficient current API access and credits for
-  user lookup and user-post timeline endpoints
-- Chromium installed through Playwright
-- Authorization to archive the account/content, and confirmation that the
-  automated browser activity is permitted under X's current terms
+From the repository root, with the virtual environment activated:
 
-## Setup (Windows PowerShell)
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m playwright install chromium
-Copy-Item .env.example .env
-notepad .env
+```bat
+set PYTHONPATH=backend
+python -m app.browser_capture --url https://x.com/username --manual
 ```
 
-Set `X_BEARER_TOKEN` in `.env`. Do not commit or share this file.
+Replace `username` with the profile you are authorized to view and archive.
+Sign in yourself in the browser if required. Open one individual post at a time.
+Return to the Command Prompt and press Enter to capture the current post. Type
+`q` and press Enter to close the browser and finish.
 
-## Run an automatic archive
+## Scope and limitations
 
-From the repository root:
-
-```powershell
-$env:PYTHONPATH = "backend"
-python -m app.browser_capture --url https://x.com/username --confirm-platform-permission
-```
-
-Optional small test run:
-
-```powershell
-python -m app.browser_capture --url https://x.com/username --max-posts 10 --confirm-platform-permission
-```
-
-AgentX will:
-1. Resolve the profile using the official API.
-2. Fetch timeline pages using API pagination and collect returned post IDs.
-3. Open a persistent, visible Chromium browser on this PC.
-4. Ask for one-time user readiness confirmation after any required login.
-5. Visit each API-discovered post URL sequentially.
-6. Capture visible image elements served from X's media host.
-7. Validate PNG decoding, dimensions and aspect-ratio sanity.
-8. Save SHA-256 and metadata sidecars in `storage/screenshots/<post-id>/`.
-
-The user does not need to scroll or confirm every post. The browser profile is
-stored in `storage/browser-profile/` and should be kept private. The user may
-need to sign in or complete verification directly in the browser.
-
-## API and platform limits
-
-The runner only processes posts returned by the configured official API endpoint.
-It cannot promise every historical post: results depend on API tier, credits,
-timeline endpoint behavior, account visibility and the token's permissions. If
-the API returns HTTP 402 (credits depleted), discovery stops; browser automation
-is not used to evade API billing or access restrictions.
-
-The browser runner does not call undocumented endpoints, scrape hidden APIs,
-bypass login, solve CAPTCHA, evade rate limits or continue through access denials.
-It is gated behind an explicit confirmation flag because local execution does not
-remove the platform's terms or restrictions. If X does not permit the automated
-browser traversal for the intended use, do not run it; use a permitted manual or
-official export workflow instead.
+- No X API calls, API token, or API credits are used in manual mode.
+- AgentX does not enumerate profile posts, auto-scroll, or automatically move
+  between posts. The user chooses each post and initiates each capture.
+- Only visible, loaded image elements served from X's media host and meeting
+  basic technical dimensions are considered.
+- The tool does not bypass login, CAPTCHA, access controls, rate limits or
+  platform restrictions. Only use it for content you are authorized to access
+  and archive, consistent with X's current terms and applicable law.
 
 ## Local output and privacy
 
-Screenshots are saved to `storage/screenshots/`; each PNG has a JSON sidecar with
-source URL, capture timestamp, natural and screenshot dimensions, alt text and
-SHA-256. Browser cookies/session data are stored under
-`storage/browser-profile/`. Keep both folders private and never commit them.
-
-No content or sensitivity classification is performed. Checks are technical only:
-X media-host image source, loaded/visible state, dimensions, PNG decoding,
-aspect-ratio sanity and SHA-256.
+Screenshots are stored in `storage/screenshots/<post-id>/` with JSON sidecars
+containing source URL, capture timestamp, dimensions, SHA-256 and alt text.
+Persistent browser cookies/session data are stored in
+`storage/browser-profile/`. Keep these folders private and do not commit them.
 
 ## Optional enhancement
 
-The optional local enhancement utility must write a separate derivative and must
-never overwrite the source screenshot. Keep the untouched PNG as the archive master.
+Any enhancement must write a separate derivative and must never overwrite the
+original screenshot. Keep the untouched PNG as the archive master.
