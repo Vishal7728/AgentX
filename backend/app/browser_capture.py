@@ -140,10 +140,10 @@ def main() -> None:
         page = context.pages[0] if context.pages else context.new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
-            print("\\nAgentX local browser is ready.")
+            print("\nAgentX local browser is ready.")
             print("Sign in yourself if X asks. Complete any verification yourself.")
             print("Scroll manually to a post you are authorized to archive.")
-            print("Press Enter here to screenshot the first visible post; type q to exit.\\n")
+            print("Press Enter here to screenshot the first visible post; type q to exit.\n")
             while True:
                 command = input("AgentX > ").strip().lower()
                 if command in {"q", "quit", "exit"}:
