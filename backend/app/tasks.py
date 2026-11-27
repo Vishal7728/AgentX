@@ -61,6 +61,7 @@ def discover_profile(self, job_id):
                 for item in payload.get("includes", {}).get("media", [])
                 if item.get("type") == "photo"
             }
+            queued_media_ids = []
             with SessionLocal() as db:
                 job = db.get(Job, job_id)
                 for post in posts:
@@ -85,9 +86,12 @@ def discover_profile(self, job_id):
                         job.total_media += 1
                         if item.get("url"):
                             db.flush()
-                            download_media.delay(row.id)
+                            queued_media_ids.append(row.id)
                 job.pagination_token = payload.get("meta", {}).get("next_token")
                 db.commit()
+            # Dispatch only after the transaction commits, so workers can see the rows.
+            for media_id in queued_media_ids:
+                download_media.delay(media_id)
             if not payload.get("meta", {}).get("next_token"):
                 break
         with SessionLocal() as db:
