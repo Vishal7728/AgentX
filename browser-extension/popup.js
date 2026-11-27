@@ -10,7 +10,7 @@ async function inspectPost(tabId) {
         const match=location.pathname.match(/\/status\/(\d+)/);
         if(!match) return {ok:false,error:"Open an individual X post URL containing /status/ID."};
         const postId=match[1];
-        const photoViewer=/\\/photo\\/\\d+/.test(location.pathname);
+        const photoViewer=/\/photo\/\d+/.test(location.pathname);
         const articles=[...document.querySelectorAll("article")];
         const article=articles.find(a=>[...a.querySelectorAll('a[href*="/status/"]')].some(a=>{
           try{return new URL(a.href).pathname.includes("/status/"+postId)}catch{return false}
