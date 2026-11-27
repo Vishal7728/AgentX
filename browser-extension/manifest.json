@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "AgentX Visible Tab Capture",
+  "version": "1.0.0",
+  "description": "Save a user-initiated screenshot of the currently visible X post tab.",
+  "permissions": ["activeTab", "downloads"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture visible X post"
+  }
+}
