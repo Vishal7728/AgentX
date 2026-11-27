@@ -157,19 +157,121 @@ def capture_visible_post(page, output: Path, post: dict) -> int:
     return saved
 
 
+def capture_current_page(page, output: Path) -> int:
+    """Capture images from the currently open post only; never navigate or enumerate posts."""
+    try:
+        article = page.locator("article").first
+        article.wait_for(state="visible", timeout=5000)
+    except Exception:
+        print("  No visible post found. Open an individual post in the browser and try again.")
+        return 0
+
+    post_url = page.url
+    match = re.search(r"/status/(\d+)", post_url)
+    post_id = match.group(1) if match else f"manual-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+    images = article.locator("img")
+    candidates = []
+    for index in range(images.count()):
+        img = images.nth(index)
+        try:
+            info = img.evaluate("""el => {
+              const r = el.getBoundingClientRect();
+              return {w:el.naturalWidth,h:el.naturalHeight,complete:el.complete,src:el.currentSrc||el.src||'',
+                visible:r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth,
+                alt:el.alt||''};
+            }""")
+            if (info["complete"] and info["visible"] and
+                    "pbs.twimg.com/media/" in info["src"] and
+                    info["w"] >= MIN_WIDTH and info["h"] >= MIN_HEIGHT):
+                candidates.append((img, info))
+        except Exception:
+            continue
+
+    if not candidates:
+        print("  No eligible visible X media images found in this post.")
+        return 0
+
+    folder = output / safe_name(post_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    saved = 0
+    for index, (img, info) in enumerate(candidates, start=1):
+        target = folder / f"image-{index:02d}.png"
+        if target.exists() and target.with_suffix(".json").exists():
+            print(f"  EXISTS image {index}")
+            continue
+        try:
+            img.screenshot(path=str(target), animations="disabled", timeout=12000)
+            with Image.open(target) as shot:
+                shot.load()
+                sw, sh = shot.size
+            if (sw < 1 or sh < 1 or
+                    abs((sw / sh) - (info["w"] / info["h"])) > 0.08):
+                target.unlink(missing_ok=True)
+                print(f"  REJECTED image {index}: screenshot validation failed")
+                continue
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()
+            target.with_suffix(".json").write_text(json.dumps({
+                "source_page": post_url,
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "capture_method": "user_initiated_visible_img_screenshot",
+                "browser_natural_dimensions": [info["w"], info["h"]],
+                "screenshot_dimensions": [sw, sh],
+                "sha256": digest,
+                "alt": info["alt"],
+                "note": "User-initiated rendered screenshot, not the original uploaded file.",
+            }, indent=2), encoding="utf-8")
+            saved += 1
+        except Exception as exc:
+            target.unlink(missing_ok=True)
+            print(f"  FAILED image {index}: {exc}")
+    print(f"  Saved {saved}/{len(candidates)} screenshot(s) from the currently open page.")
+    return saved
+
+
+def run_manual_capture(profile_url: str, output: Path) -> None:
+    """Open one profile; user chooses each post and explicitly triggers each capture."""
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
+    total = 0
+    with sync_playwright() as playwright:
+        context = playwright.chromium.launch_persistent_context(
+            str(PROFILE_DIR), headless=False,
+            viewport={"width": 1440, "height": 1000},
+            device_scale_factor=1, accept_downloads=False,
+        )
+        page = context.pages[0] if context.pages else context.new_page()
+        try:
+            page.goto(profile_url, wait_until="domcontentloaded", timeout=60000)
+            print("\nManual capture browser opened.")
+            print("Sign in yourself if required. Navigate manually to one individual post at a time.")
+            print("No post enumeration, auto-scrolling, or automatic post-to-post navigation is performed.")
+            while True:
+                command = input("\nPress Enter to capture the currently open post, or type q then Enter to quit: ").strip().lower()
+                if command == "q":
+                    break
+                if command:
+                    print("Enter a blank line to capture, or q to quit.")
+                    continue
+                total += capture_current_page(page, output)
+            print(f"\nFinished. Saved {total} screenshot(s). Archive: {output}")
+        finally:
+            context.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Discover accessible X posts via API and screenshot them in local Chromium."
+        description="Capture X post screenshots in a local Chromium browser; manual mode needs no X API token."
     )
     parser.add_argument("--url", required=True, help="X profile URL")
+    parser.add_argument("--manual", action="store_true", help="Open the profile and capture only when you press Enter; no API discovery or automatic post navigation.")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--max-posts", type=int, default=0, help="Optional test limit; 0 means all API-accessible posts")
     parser.add_argument("--confirm-platform-permission", action="store_true",
                         help="Confirm you are authorized and X's current terms permit this automated browser workflow.")
     args = parser.parse_args()
 
-    if not args.confirm_platform_permission:
-        parser.error("Before automation, review X's current terms and pass --confirm-platform-permission only if this activity is permitted.")
+    if not args.manual and not args.confirm_platform_permission:
+        parser.error("For API-driven browser automation, review X's current terms and pass --confirm-platform-permission only if permitted. Or use --manual.")
     if args.max_posts < 0:
         parser.error("--max-posts cannot be negative.")
 
@@ -179,6 +281,11 @@ def main() -> None:
         parser.error(str(exc))
 
     load_local_env()
+    output = Path(args.output).expanduser().resolve()
+    if args.manual:
+        run_manual_capture(profile_url, output)
+        return
+
     if not os.environ.get("X_BEARER_TOKEN") or os.environ.get("X_BEARER_TOKEN") == "replace_me":
         parser.error("Set X_BEARER_TOKEN in the repository .env file first.")
 
