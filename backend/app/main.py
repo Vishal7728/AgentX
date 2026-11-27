@@ -9,6 +9,7 @@ from .db import init_db, SessionLocal, engine
 from .models import Job, Media
 from .tasks import discover_profile, download_media
 from .config import STORAGE_DIR, X_BEARER_TOKEN, REDIS_URL
+from .worker import celery_app
 import redis
 
 app = FastAPI(title="AgentX — X Image Archive", version="1.1.0")
@@ -45,7 +46,7 @@ def dashboard():
 
 @app.get("/api/health")
 def health():
-    checks = {"database": False, "redis": False, "x_token_configured": bool(X_BEARER_TOKEN and X_BEARER_TOKEN != "replace_me")}
+    checks = {"database": False, "redis": False, "worker": False, "x_token_configured": bool(X_BEARER_TOKEN and X_BEARER_TOKEN != "replace_me")}
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -57,7 +58,12 @@ def health():
         checks["redis"] = True
     except Exception:
         pass
-    checks["ok"] = checks["database"] and checks["redis"]
+    try:
+        replies = celery_app.control.ping(timeout=1.0)
+        checks["worker"] = bool(replies)
+    except Exception:
+        pass
+    checks["ok"] = checks["database"] and checks["redis"] and checks["worker"]
     return checks
 
 @app.post("/api/jobs", status_code=202)
