@@ -1,103 +1,104 @@
 const button = document.getElementById("capture");
 const status = document.getElementById("status");
-const X_HOSTS = ["x.com", "www.x.com", "twitter.com", "www.twitter.com"];
+const X_HOSTS = ["x.com","www.x.com","twitter.com","www.twitter.com"];
 
 async function inspectPost(tabId) {
   const results = await chrome.scripting.executeScript({
-    target: {tabId, frameIds:[0]},
-    func: () => {
+    target:{tabId,frameIds:[0]},
+    func:()=>{
       try {
-        const match = location.pathname.match(/\/status\/(\d+)/);
-        if (!match) return {ok:false, error:"Open an individual X post URL containing /status/ID first."};
-        const postId = match[1];
-        const articles = [...document.querySelectorAll("article")];
-        const article = articles.find(a =>
-          [...a.querySelectorAll('a[href*="/status/"]')].some(a => {
-            try { return new URL(a.href).pathname.includes("/status/" + postId); }
-            catch { return false; }
-          })
-        ) || articles.find(a => {
-          const r = a.getBoundingClientRect();
-          return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight;
-        });
-        if (!article) return {ok:false, error:"No visible post card found. Open the post detail page and wait for it to load."};
+        const match=location.pathname.match(/\/status\/(\d+)/);
+        if(!match) return {ok:false,error:"Open an individual X post URL containing /status/ID."};
+        const postId=match[1];
+        const articles=[...document.querySelectorAll("article")];
+        const article=articles.find(a=>[...a.querySelectorAll('a[href*="/status/"]')].some(a=>{
+          try{return new URL(a.href).pathname.includes("/status/"+postId)}catch{return false}
+        })) || (articles.length===1?articles[0]:null);
+        if(!article) return {ok:false,error:"Could not identify the target post card. Open its direct /status/ page."};
 
-        const media = [];
-        const seen = new Set();
-        for (const img of [...article.querySelectorAll("img")]) {
-          const src = img.currentSrc || img.src || "";
-          const r = img.getBoundingClientRect();
-          if (!src.includes("pbs.twimg.com/media/") || !img.complete ||
-              img.naturalWidth < 120 || img.naturalHeight < 90 ||
-              r.width < 80 || r.height < 60 || r.bottom <= 0 ||
-              r.top >= innerHeight || r.right <= 0 || r.left >= innerWidth) continue;
-          const key = src.split("?")[0] + "|" + Math.round(r.x) + "|" + Math.round(r.y);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const left=Math.max(0,r.left), top=Math.max(0,r.top);
-          const right=Math.min(innerWidth,r.right), bottom=Math.min(innerHeight,r.bottom);
-          if (right<=left || bottom<=top) continue;
-          media.push({x:left,y:top,width:right-left,height:bottom-top,
+        const candidates=[];
+        const add=(el,src,nw,nh,alt,kind)=>{
+          const r=el.getBoundingClientRect();
+          const left=Math.max(0,r.left),top=Math.max(0,r.top);
+          const right=Math.min(innerWidth,r.right),bottom=Math.min(innerHeight,r.bottom);
+          if(r.width<70||r.height<60||right-left<60||bottom-top<50||
+             r.bottom<=0||r.top>=innerHeight||r.right<=0||r.left>=innerWidth)return;
+          candidates.push({el,x:left,y:top,width:right-left,height:bottom-top,
             viewportWidth:innerWidth,viewportHeight:innerHeight,
-            naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,
-            alt:img.alt||"",source:src});
+            naturalWidth:nw||Math.round(r.width),naturalHeight:nh||Math.round(r.height),
+            alt:alt||"",source:src||"",kind});
+        };
+
+        // X photo grid: each [data-testid="tweetPhoto"] is an individual media tile.
+        const tiles=[...article.querySelectorAll('[data-testid="tweetPhoto"]')];
+        for(const tile of tiles){
+          const img=[...tile.querySelectorAll("img")].find(i=>i.complete&&i.naturalWidth>=100&&i.naturalHeight>=80);
+          const bg=getComputedStyle(tile).backgroundImage||"";
+          const src=img?(img.currentSrc||img.src||""):(bg.match(/url\(["']?(.*?)["']?\)/)?.[1]||"");
+          const target=img||tile;
+          const rect=target.getBoundingClientRect();
+          if(img || src || rect.width>0) add(target,src,img?.naturalWidth,img?.naturalHeight,img?.alt,"tweetPhoto");
         }
-        return {ok:true, postId, pageUrl:location.href, media,
-          articleCount:articles.length, title:document.title};
-      } catch (error) {
-        return {ok:false,error:"Page inspection failed: " + (error?.message || String(error))};
-      }
+
+        // Fallback for X layouts that expose media images without tweetPhoto wrappers.
+        if(!candidates.length){
+          for(const img of [...article.querySelectorAll("img")]){
+            const src=img.currentSrc||img.src||"";
+            if(!src.includes("pbs.twimg.com/media/")||!img.complete||
+               img.naturalWidth<100||img.naturalHeight<80)continue;
+            add(img,src,img.naturalWidth,img.naturalHeight,img.alt,"media-img");
+          }
+        }
+
+        // Remove duplicates by near-identical geometry; retain each distinct grid tile.
+        const unique=[];
+        for(const item of candidates){
+          const duplicate=unique.some(u=>Math.abs(u.x-item.x)<3&&Math.abs(u.y-item.y)<3&&
+            Math.abs(u.width-item.width)<4&&Math.abs(u.height-item.height)<4);
+          if(!duplicate)unique.push(item);
+        }
+        const media=unique.map(({el,...data})=>data);
+        return {ok:true,postId,pageUrl:location.href,media,
+          detectedPhotoTiles:tiles.length,articleImageCount:article.querySelectorAll("img").length};
+      }catch(error){return {ok:false,error:"Page inspection failed: "+(error?.message||String(error))}}
     }
   });
-  if (!Array.isArray(results) || !results.length) {
-    throw new Error("Chrome could not inspect the active X tab. Reload the post and try again.");
-  }
-  if (results[0]?.error) throw new Error("Chrome inspection error: " + (results[0].error.message || "unknown error"));
-  const payload = results[0]?.result;
-  if (!payload || typeof payload !== "object") {
-    throw new Error("X page returned no inspection data. Check that this is an individual /status/ post, then reload it.");
-  }
-  if (!payload.ok) throw new Error(payload.error || "Could not identify the post.");
-  if (!Array.isArray(payload.media) || payload.media.length === 0) {
-    throw new Error("Post card found, but no loaded media images are visible. Scroll the post image(s) fully into view, wait for loading, then capture again.");
+  if(!Array.isArray(results)||!results.length)throw new Error("Chrome could not inspect the active X tab. Reload the post.");
+  const payload=results[0]?.result;
+  if(!payload||typeof payload!=="object")throw new Error("No page inspection result. Reload the individual X post.");
+  if(!payload.ok)throw new Error(payload.error||"Could not identify the post.");
+  if(!Array.isArray(payload.media)||!payload.media.length){
+    throw new Error("Post detected, but X did not expose visible photo tiles. Open the post detail page, bring its images into view, wait for loading, and retry.");
   }
   return payload;
 }
 
-async function cropViewport(dataUrl, box) {
-  const image = new Image();
-  image.src = dataUrl;
-  await image.decode();
-  const sxScale=image.naturalWidth/box.viewportWidth, syScale=image.naturalHeight/box.viewportHeight;
-  const sx=Math.max(0,Math.round(box.x*sxScale)), sy=Math.max(0,Math.round(box.y*syScale));
-  const sw=Math.min(image.naturalWidth-sx,Math.max(1,Math.round(box.width*sxScale)));
-  const sh=Math.min(image.naturalHeight-sy,Math.max(1,Math.round(box.height*syScale)));
-  const canvas=document.createElement("canvas"); canvas.width=sw; canvas.height=sh;
+async function cropViewport(dataUrl,box){
+  const image=new Image();image.src=dataUrl;await image.decode();
+  const xs=image.naturalWidth/box.viewportWidth,ys=image.naturalHeight/box.viewportHeight;
+  const sx=Math.max(0,Math.round(box.x*xs)),sy=Math.max(0,Math.round(box.y*ys));
+  const sw=Math.min(image.naturalWidth-sx,Math.max(1,Math.round(box.width*xs)));
+  const sh=Math.min(image.naturalHeight-sy,Math.max(1,Math.round(box.height*ys)));
+  const canvas=document.createElement("canvas");canvas.width=sw;canvas.height=sh;
   canvas.getContext("2d").drawImage(image,sx,sy,sw,sh,0,0,sw,sh);
-  return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("Could not encode screenshot.")),"image/png"));
+  return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error("PNG encoding failed.")),"image/png"));
 }
-
-function blobDataUrl(blob) {
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>resolve(reader.result);
-    reader.onerror=()=>reject(new Error("Could not prepare screenshot download."));
-    reader.readAsDataURL(blob);
-  });
+function blobDataUrl(blob){
+  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error("Could not prepare download."));reader.readAsDataURL(blob)});
 }
-async function saveBlob(blob,filename) {
+async function saveBlob(blob,filename){
   return chrome.downloads.download({url:await blobDataUrl(blob),filename,saveAs:false,conflictAction:"uniquify"});
 }
 
 button.addEventListener("click",async()=>{
-  button.disabled=true; status.textContent="Inspecting the open post…";
-  try {
+  button.disabled=true;status.textContent="Detecting X photo tiles…";
+  try{
     const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
-    if(!tab?.id||!tab.url) throw new Error("No active tab found.");
-    const url=new URL(tab.url);
-    if(!X_HOSTS.includes(url.hostname)) throw new Error("Open an X post in this tab first.");
+    if(!tab?.id||!tab.url)throw new Error("No active tab.");
+    if(!X_HOSTS.includes(new URL(tab.url).hostname))throw new Error("Open an X post first.");
     const inspected=await inspectPost(tab.id);
-    status.textContent=`Found ${inspected.media.length} visible image(s). Saving separately…`;
+    status.textContent=`Detected ${inspected.media.length} photo tile(s). Capturing each separately…`;
     const viewport=await chrome.tabs.captureVisibleTab(tab.windowId,{format:"png"});
     const safeId=inspected.postId.replace(/[^0-9A-Za-z_-]/g,"_");
     let saved=0,duplicates=0,failed=0;
@@ -107,25 +108,23 @@ button.addEventListener("click",async()=>{
         const blob=await cropViewport(viewport,item);
         const digestBytes=await crypto.subtle.digest("SHA-256",await blob.arrayBuffer());
         const digest=[...new Uint8Array(digestBytes)].map(v=>v.toString(16).padStart(2,"0")).join("");
-        const key=`sha256:${digest}`;
+        const key="sha256:"+digest;
         if((await chrome.storage.local.get(key))[key]){duplicates++;continue;}
         const index=String(i+1).padStart(2,"0");
         const base=`AgentX-Captures/${safeId}/image-${index}-${digest.slice(0,12)}`;
-        await saveBlob(blob,`${base}.png`);
-        const manifest={post_id:inspected.postId,source_page:inspected.pageUrl,
-          captured_at:new Date().toISOString(),image_index:i+1,
-          detected_images_in_view:inspected.media.length,
+        await saveBlob(blob,base+".png");
+        const manifest={post_id:inspected.postId,source_page:inspected.pageUrl,captured_at:new Date().toISOString(),
+          image_index:i+1,detected_images_in_view:inspected.media.length,
           screenshot_dimensions:[Math.round(item.width),Math.round(item.height)],
           source_natural_dimensions:[item.naturalWidth,item.naturalHeight],
-          source_image_url:item.source,alt:item.alt,sha256:digest,
-          capture_method:"user_initiated_individual_visible_image_crop",
-          note:"Rendered browser screenshot crop; not original uploaded media bytes."};
-        await saveBlob(new Blob([JSON.stringify(manifest,null,2)],{type:"application/json"}),`${base}.json`);
+          source_image_url:item.source,alt:item.alt,sha256:digest,capture_method:"user_initiated_visible_photo_tile_crop",
+          note:"Rendered browser screenshot crop; not the original uploaded media bytes."};
+        await saveBlob(new Blob([JSON.stringify(manifest,null,2)],{type:"application/json"}),base+".json");
         await chrome.storage.local.set({[key]:{postId:inspected.postId,capturedAt:manifest.captured_at,sha256:digest}});
         saved++;
-      }catch(error){failed++;console.warn("AgentX image capture failed:",error);}
+      }catch(error){failed++;console.warn("AgentX tile capture failed:",error)}
     }
     status.textContent=`Post ${safeId}: ${saved} saved, ${duplicates} duplicate(s), ${failed} failed. Downloads/AgentX-Captures/${safeId}/`;
-  }catch(error){status.textContent=error.message||"Capture failed.";}
-  finally{button.disabled=false;}
+  }catch(error){status.textContent=error.message||"Capture failed."}
+  finally{button.disabled=false}
 });
