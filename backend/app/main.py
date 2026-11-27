@@ -16,7 +16,7 @@ class CreateJob(BaseModel):
     profile_url: HttpUrl
 
 def extract_username(url: str) -> str:
-    match = re.fullmatch(r"https?://(?:www\\.)?(?:x\\.com|twitter\\.com)/([A-Za-z0-9_]{1,15})/?", str(url))
+    match = re.fullmatch(r"https?://(?:www\.)?(?:x\.com|twitter\.com)/([A-Za-z0-9_]{1,15})/?", str(url))
     if not match:
         raise HTTPException(400, "Enter a profile URL such as https://x.com/username.")
     username = match.group(1)
