@@ -104,11 +104,12 @@ def capture_visible_post(page, output: Path, post: dict) -> int:
         try:
             info = img.evaluate("""el => {
               const r = el.getBoundingClientRect();
-              return {w:el.naturalWidth,h:el.naturalHeight,complete:el.complete,
+              return {w:el.naturalWidth,h:el.naturalHeight,complete:el.complete,src:el.currentSrc||el.src||'',
                 visible:r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth,
                 alt:el.alt||''};
             }""")
             if (info["complete"] and info["visible"] and
+                    "pbs.twimg.com/media/" in info["src"] and
                     info["w"] >= MIN_WIDTH and info["h"] >= MIN_HEIGHT):
                 candidates.append((img, info))
         except Exception:
