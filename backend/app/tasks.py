@@ -10,7 +10,7 @@ from .worker import celery_app
 from sqlalchemy import select, func
 from .db import SessionLocal
 from .models import Job, Post, Media
-from .x_api import resolve_user, get_user_posts
+from .x_api import resolve_user, get_user_posts, XAPIError
 from .config import STORAGE_DIR, MAX_DOWNLOAD_BYTES, HTTP_TIMEOUT_SECONDS
 
 def _job_status(job_id):
@@ -106,6 +106,8 @@ def discover_profile(self, job_id):
             if job:
                 job.status, job.error = "error", str(exc)[:2000]
                 db.commit()
+        if isinstance(exc, XAPIError) and not exc.retryable:
+            raise
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=min(300, 15 * (2 ** self.request.retries)))
         raise
