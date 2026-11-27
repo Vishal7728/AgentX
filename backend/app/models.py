@@ -32,7 +32,7 @@ class Post(Base):
 
 class Media(Base):
     __tablename__ = "media"
-    __table_args__ = (UniqueConstraint("post_id", "media_key", name="uq_post_media"),)
+    __table_args__ = (UniqueConstraint("job_id", "post_id", "media_key", name="uq_job_post_media"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
     post_id: Mapped[str] = mapped_column(String(32), index=True)
