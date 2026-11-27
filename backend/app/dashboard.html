@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentX Archive</title><style>
+body{font:15px system-ui;max-width:1050px;margin:36px auto;padding:0 18px;background:#f5f7fb;color:#172033}
+.card{background:white;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin:18px 0}
+input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;margin:10px 0}
+button{padding:9px 14px;border:0;border-radius:8px;background:#1d4ed8;color:white;cursor:pointer;margin:4px}
+button.secondary{background:#e2e8f0;color:#172033}button:disabled{opacity:.45}
+.muted{color:#64748b;font-size:13px}.job{padding:15px 0;border-top:1px solid #e2e8f0}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:#f8fafc;padding:12px;border-radius:9px}
+.stat strong{display:block;font-size:23px;margin-top:4px}.error{color:#b91c1c;white-space:pre-wrap}
+@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style></head><body>
+<h1>AgentX — X Image Archive</h1><p class="muted">Local archiving using authorized X API access.</p>
+<section class="card"><h3>Start an archive</h3><input id="profile" placeholder="https://x.com/username">
+<p class="muted">Images only · saves the API-provided photo rendition without recompression.</p>
+<button id="start">Start archive</button> <span id="message" class="muted"></span></section>
+<section class="card"><h3>Archive jobs</h3><div id="jobs" class="muted">Loading…</div></section>
+<script>
+const el=id=>document.getElementById(id);
+async function api(url,opts={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...opts});const d=await r.json().catch(()=>({detail:r.statusText}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
+el("start").onclick=async()=>{el("start").disabled=true;el("message").textContent="Creating…";try{let j=await api("/api/jobs",{method:"POST",body:JSON.stringify({profile_url:el("profile").value.trim()})});el("message").textContent="Queued "+j.job_id;await refresh()}catch(e){el("message").textContent=e.message}finally{el("start").disabled=false}};
+async function action(id,verb){try{await api("/api/jobs/"+id+"/"+verb,{method:"POST"});await refresh()}catch(e){alert(e.message)}}
+async function showMedia(id){let rows=await api("/api/jobs/"+id+"/media");let box=el("m-"+id);box.textContent=rows.map(m=>m.media_key+" · "+m.status+" · "+(m.width||"?")+"×"+(m.height||"?")+" · "+(m.path||m.error||"")).join("\\n")||"No media records."}
+async function refresh(){try{let jobs=await api("/api/jobs");el("jobs").innerHTML=jobs.length?jobs.map(j=>{let p=j.total_media?Math.round(j.downloaded_media/j.total_media*100):0;return "<div class='job'><b>@"+j.username+"</b> · "+j.status+"<div class='grid'><div class='stat'>Posts<strong>"+j.total_posts+"</strong></div><div class='stat'>Images<strong>"+j.total_media+"</strong></div><div class='stat'>Downloaded<strong>"+j.downloaded_media+"</strong></div><div class='stat'>Failed<strong>"+j.failed_media+"</strong></div></div><progress value='"+p+"' max='100' style='width:100%'></progress><div class='muted'>"+p+"% · "+j.job_id+"</div>"+(j.error?"<div class='error'>"+j.error+"</div>":"")+"<p><button class='secondary' onclick=\\"action('"+j.job_id+"','pause')\\">Pause</button><button onclick=\\"action('"+j.job_id+"','resume')\\" "+(j.status!=="paused"?"disabled":"")+">Resume</button><button class='secondary' onclick=\\"showMedia('"+j.job_id+"')\\">Recent media</button></p><pre id='m-"+j.job_id+"'></pre></div>"}).join(""):"No jobs yet."}catch(e){el("jobs").textContent="Unable to load: "+e.message}}
+refresh();setInterval(refresh,5000);
+</script></body></html>
