@@ -1,67 +1,95 @@
-# AgentX local browser screenshot capture
+# AgentX automatic local-browser screenshot archive
 
-## Purpose
+## What this mode does
 
-This mode uses the user's own PC and a visible Chromium browser. It does not use
-an X API bearer token and does not download image URLs from X. It saves screenshots
-of image elements rendered in the browser. A screenshot is not the original upload
-and cannot recover pixels that X does not render.
+AgentX uses the configured X API bearer token to discover the posts returned by
+the authorized user-timeline endpoint. It then opens each discovered post URL in
+a visible Chromium browser running on the user's PC and captures rendered X media
+images from the post. Screenshots are stored locally with JSON manifests and
+SHA-256 checksums.
+
+This is a screenshot archive, not an original-media downloader. The browser can
+only capture pixels X actually renders; screenshots are not the original uploaded
+bytes and may be resized or transformed.
+
+## Requirements
+
+- Python 3.11+
+- An X developer bearer token with sufficient current API access and credits for
+  user lookup and user-post timeline endpoints
+- Chromium installed through Playwright
+- Authorization to archive the account/content, and confirmation that the
+  automated browser activity is permitted under X's current terms
 
 ## Setup (Windows PowerShell)
-
-1. Install Python 3.11+.
-2. From the repository root:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python -m playwright install chromium
+Copy-Item .env.example .env
+notepad .env
 ```
 
-3. Launch AgentX's local capture browser with the profile URL:
+Set `X_BEARER_TOKEN` in `.env`. Do not commit or share this file.
+
+## Run an automatic archive
+
+From the repository root:
 
 ```powershell
 $env:PYTHONPATH = "backend"
-python -m app.browser_capture --url https://x.com/username
+python -m app.browser_capture --url https://x.com/username --confirm-platform-permission
 ```
 
-On macOS/Linux, activate the virtual environment and run the same Python command.
-The browser profile is stored under `storage/browser-profile/`, so a user can sign
-in once and reuse the local session. Keep this directory private.
+Optional small test run:
 
-## Capture workflow
+```powershell
+python -m app.browser_capture --url https://x.com/username --max-posts 10 --confirm-platform-permission
+```
 
-- AgentX opens the submitted X URL in a visible browser on this PC.
-- The user signs in or completes any verification directly with X.
-- The user scrolls to the post they want to capture.
-- Press Enter in the AgentX terminal to capture images in the first visible post.
-- Type `q` to close the browser.
+AgentX will:
+1. Resolve the profile using the official API.
+2. Fetch timeline pages using API pagination and collect returned post IDs.
+3. Open a persistent, visible Chromium browser on this PC.
+4. Ask for one-time user readiness confirmation after any required login.
+5. Visit each API-discovered post URL sequentially.
+6. Capture visible image elements served from X's media host.
+7. Validate PNG decoding, dimensions and aspect-ratio sanity.
+8. Save SHA-256 and metadata sidecars in `storage/screenshots/<post-id>/`.
 
-AgentX does not automate timeline traversal, auto-scroll, solve CAPTCHA, bypass
-login, access controls, or rate limits. Use browser automation only where the
-platform's current terms and your authorization permit it.
+The user does not need to scroll or confirm every post. The browser profile is
+stored in `storage/browser-profile/` and should be kept private. The user may
+need to sign in or complete verification directly in the browser.
 
-## Local output and integrity
+## API and platform limits
 
-Screenshots are saved to `storage/screenshots/<post-id-or-time>/`. Each PNG has
-a JSON sidecar containing source page, capture time, browser natural dimensions,
-screenshot dimensions and SHA-256. The capture is rejected if the PNG cannot be
-decoded or its aspect ratio differs substantially from the browser-reported image.
+The runner only processes posts returned by the configured official API endpoint.
+It cannot promise every historical post: results depend on API tier, credits,
+timeline endpoint behavior, account visibility and the token's permissions. If
+the API returns HTTP 402 (credits depleted), discovery stops; browser automation
+is not used to evade API billing or access restrictions.
 
-The screenshot is a rendered browser capture, not the original uploaded image.
-X may resize, crop, transform or omit pixels before rendering. Review captures
-before relying on them. The persistent browser profile contains login cookies:
-never commit it, share it, or store it in a public/synced folder.
+The browser runner does not call undocumented endpoints, scrape hidden APIs,
+bypass login, solve CAPTCHA, evade rate limits or continue through access denials.
+It is gated behind an explicit confirmation flag because local execution does not
+remove the platform's terms or restrictions. If X does not permit the automated
+browser traversal for the intended use, do not run it; use a permitted manual or
+official export workflow instead.
 
-## Technical validation only
+## Local output and privacy
 
-No subject-matter or sensitivity classification is performed. Validation is limited
-to image load state, visibility, dimensions, PNG decoding, aspect-ratio sanity and
-cryptographic hash generation.
+Screenshots are saved to `storage/screenshots/`; each PNG has a JSON sidecar with
+source URL, capture timestamp, natural and screenshot dimensions, alt text and
+SHA-256. Browser cookies/session data are stored under
+`storage/browser-profile/`. Keep both folders private and never commit them.
+
+No content or sensitivity classification is performed. Checks are technical only:
+X media-host image source, loaded/visible state, dimensions, PNG decoding,
+aspect-ratio sanity and SHA-256.
 
 ## Optional enhancement
 
-If the local enhancement utility is used, it must write a separate derivative.
-It must never overwrite the source screenshot. The untouched PNG remains the archive
-master.
+The optional local enhancement utility must write a separate derivative and must
+never overwrite the source screenshot. Keep the untouched PNG as the archive master.
