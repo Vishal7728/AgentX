@@ -125,8 +125,8 @@ def resume_job(job_id: str):
         job = db.get(Job, job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        if job.status != "paused":
-            raise HTTPException(409, "Only paused jobs can be resumed.")
+        if job.status not in {"paused", "error"}:
+            raise HTTPException(409, "Only paused or failed jobs can be resumed.")
         job.status, job.error = "queued", None
         db.commit()
         pending = db.scalars(select(Media.id).where(Media.job_id == job_id, Media.status.in_(["pending", "failed"]))).all()
