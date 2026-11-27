@@ -11,6 +11,8 @@ class Job(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
     pagination_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     discovery_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    folder_mode: Mapped[str] = mapped_column(String(20), default="post")
+    archive_name: Mapped[str] = mapped_column(String(80), default="X Archive")
     total_posts: Mapped[int] = mapped_column(Integer, default=0)
     processed_posts: Mapped[int] = mapped_column(Integer, default=0)
     total_media: Mapped[int] = mapped_column(Integer, default=0)
