@@ -1,27 +1,65 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AgentX Archive</title><style>
-body{font:15px system-ui;max-width:1050px;margin:36px auto;padding:0 18px;background:#f5f7fb;color:#172033}
-.card{background:white;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin:18px 0}
-input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:8px;margin:10px 0}
-button{padding:9px 14px;border:0;border-radius:8px;background:#1d4ed8;color:white;cursor:pointer;margin:4px}
-button.secondary{background:#e2e8f0;color:#172033}button:disabled{opacity:.45}
-.muted{color:#64748b;font-size:13px}.job{padding:15px 0;border-top:1px solid #e2e8f0}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{background:#f8fafc;padding:12px;border-radius:9px}
-.stat strong{display:block;font-size:23px;margin-top:4px}.error{color:#b91c1c;white-space:pre-wrap}
-@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}
-</style></head><body>
-<h1>AgentX — X Image Archive</h1><p class="muted">Local archiving using authorized X API access.</p>
-<section class="card"><h3>Start an archive</h3><input id="profile" placeholder="https://x.com/username">
-<p class="muted">Images only · saves the API-provided photo rendition without recompression.</p>
-<button id="start">Start archive</button> <span id="message" class="muted"></span></section>
-<section class="card"><h3>Archive jobs</h3><div id="jobs" class="muted">Loading…</div></section>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentX — Image Archive</title>
+<style>
+:root{color-scheme:dark;--bg:#090d18;--panel:#111827;--panel2:#151f32;--line:#26344b;--text:#eef4ff;--muted:#91a2bc;--blue:#6d8cff;--cyan:#53d6d0;--green:#4adea3;--red:#ff7785;--amber:#f7c66a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% -10%,#1c2b50 0,transparent 42%),var(--bg);color:var(--text);font:15px Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.shell{max-width:1180px;margin:0 auto;padding:34px 24px 70px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}
+.brand{display:flex;align-items:center;gap:13px}.logo{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#6d8cff,#53d6d0);display:grid;place-items:center;color:#07101e;font-weight:900;font-size:20px;box-shadow:0 8px 30px #537bff33}
+h1{font-size:22px;letter-spacing:-.5px;margin:0}.sub{font-size:13px;color:var(--muted);margin-top:4px}
+.health{display:flex;align-items:center;gap:9px;border:1px solid var(--line);background:#111a2a;border-radius:99px;padding:9px 13px;color:var(--muted);font-size:12px}.dot{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 12px currentColor}
+.hero{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;margin-bottom:18px}
+.panel{background:linear-gradient(160deg,#141e30,#101827);border:1px solid var(--line);border-radius:18px;padding:23px;box-shadow:0 16px 45px #0002}
+.eyebrow{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--cyan);font-weight:700}.panel h2{font-size:20px;letter-spacing:-.4px;margin:9px 0 7px}.desc{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 18px}
+label{display:block;font-size:12px;color:#b7c5da;font-weight:650;margin-bottom:8px}.field{width:100%;background:#0b1321;border:1px solid #30415c;border-radius:10px;padding:13px 14px;color:var(--text);font:inherit;outline:none}.field:focus{border-color:var(--blue);box-shadow:0 0 0 3px #6d8cff22}
+.row{display:flex;gap:12px;align-items:end}.grow{flex:1}.options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.choice{border:1px solid #30415c;background:#0c1524;border-radius:12px;padding:13px;cursor:pointer;display:flex;gap:10px;align-items:flex-start}.choice:has(input:checked){border-color:var(--blue);background:#182544;box-shadow:inset 0 0 0 1px #6d8cff44}.choice input{accent-color:var(--blue);margin-top:3px}.choice b{font-size:13px;display:block}.choice small{font-size:11px;color:var(--muted);display:block;margin-top:4px;line-height:1.45}
+.btn{border:0;border-radius:10px;background:linear-gradient(135deg,#6d8cff,#5573f5);color:white;padding:13px 18px;font-weight:750;cursor:pointer;white-space:nowrap;box-shadow:0 8px 24px #537bff30}.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.btn:disabled{opacity:.5;cursor:wait;transform:none}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.stat{background:#0b1422;border:1px solid #25344c;border-radius:13px;padding:15px}.stat span{font-size:11px;color:var(--muted)}.stat strong{display:block;font-size:24px;letter-spacing:-1px;margin-top:6px}.stat em{font-size:11px;color:var(--muted);font-style:normal}
+.sectionhead{display:flex;justify-content:space-between;align-items:center;margin:28px 0 13px}.sectionhead h2{font-size:17px;margin:0}.count{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:5px 9px;border-radius:99px}
+.job{border:1px solid var(--line);border-radius:14px;background:#111a29;padding:17px;margin-bottom:11px}.jobtop{display:flex;justify-content:space-between;gap:12px;align-items:center}.jobname{font-weight:750}.jobmeta{font-size:11px;color:var(--muted);margin-top:4px}.pill{font-size:10px;text-transform:uppercase;letter-spacing:.6px;padding:6px 9px;border-radius:99px;background:#253149;color:#c7d5ed}.pill.completed{background:#123a32;color:var(--green)}.pill.error,.pill.completed_with_errors{background:#3a2029;color:var(--red)}.pill.discovering,.pill.processing,.pill.queued{background:#1b2b50;color:#a9bdff}
+.jobstats{display:flex;flex-wrap:wrap;gap:17px;margin:15px 0 10px;font-size:12px;color:var(--muted)}.jobstats b{color:var(--text);margin-left:4px}
+.track{height:7px;background:#253149;border-radius:99px;overflow:hidden}.bar{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:99px;transition:width .3s}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.smallbtn{border:1px solid #354560;background:#172337;color:#dce7f8;border-radius:8px;padding:7px 11px;font-size:11px;cursor:pointer}.smallbtn:hover{border-color:var(--blue)}.smallbtn:disabled{opacity:.35;cursor:not-allowed}
+.err{font-size:12px;color:#ff9aa5;background:#351e2a;padding:10px;border-radius:9px;margin-top:12px;overflow-wrap:anywhere}.empty,.loading{padding:35px 16px;text-align:center;color:var(--muted);border:1px dashed #30415c;border-radius:13px;font-size:13px}.toast{font-size:12px;margin-top:12px;color:var(--amber);min-height:17px}.footer{color:#64748b;font-size:11px;margin-top:28px;line-height:1.6}
+@media(max-width:800px){.hero{grid-template-columns:1fr}.shell{padding:22px 14px 50px}.top{align-items:flex-start}.row{align-items:stretch;flex-direction:column}.btn{width:100%}}
+@media(max-width:480px){.options{grid-template-columns:1fr}.health{font-size:0}.health .dot{margin:0}.stats{grid-template-columns:1fr 1fr}}
+</style></head>
+<body><main class="shell">
+<header class="top"><div class="brand"><div class="logo">A</div><div><h1>AgentX <span style="color:var(--muted);font-weight:500">/ Image Archive</span></h1><div class="sub">Authorized X media archiving · Local-first workspace</div></div></div><div class="health" id="health"><i class="dot"></i><span>Checking services…</span></div></header>
+<section class="hero">
+<div class="panel"><div class="eyebrow">New archive task</div><h2>Build your image library</h2><p class="desc">Add an X profile and choose how images should be organized on your computer. Only photo attachments are queued.</p>
+<form id="createForm">
+<label for="profile">X profile URL</label><input class="field" id="profile" type="url" placeholder="https://x.com/username" required>
+<div style="height:15px"></div><label for="archiveName">Local archive folder name</label><input class="field" id="archiveName" maxlength="80" value="X Archive" required>
+<div class="options">
+<label class="choice"><input type="radio" name="folderMode" value="post" checked><span><b>Separate folder per post</b><small>Profile / year / month / post ID / images</small></span></label>
+<label class="choice"><input type="radio" name="folderMode" value="profile"><span><b>All images in one profile folder</b><small>Profile / images / image files</small></span></label>
+</div>
+<div class="row" style="margin-top:17px"><div class="grow"><div class="sub">Files are saved under your project’s <code>storage/archive/</code> directory.</div></div><button class="btn" id="startBtn" type="submit">＋ Start archive</button></div>
+<div class="toast" id="formMessage" role="status"></div>
+</form></div>
+<aside class="panel"><div class="eyebrow">Workspace overview</div><h2>Archive activity</h2><p class="desc">Live totals from the local job database.</p><div class="stats">
+<div class="stat"><span>ACTIVE TASKS</span><strong id="activeCount">—</strong><em>queued / running</em></div>
+<div class="stat"><span>POSTS SCANNED</span><strong id="postCount">—</strong><em>accessible posts</em></div>
+<div class="stat"><span>IMAGES SAVED</span><strong id="savedCount">—</strong><em>verified files</em></div>
+<div class="stat"><span>FAILED</span><strong id="failedCount">—</strong><em>requiring attention</em></div>
+</div></aside></section>
+<div class="sectionhead"><h2>Archive jobs</h2><span class="count" id="jobCount">Loading</span></div>
+<section id="jobs" aria-live="polite"><div class="loading">Connecting to local archive service…</div></section>
+<div class="footer">AgentX v1.1 · Uses the official X API. Available history and media rendition quality depend on your X API access. Download only content you are authorized to archive.</div>
+</main>
 <script>
-const el=id=>document.getElementById(id);
-async function api(url,opts={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...opts});const d=await r.json().catch(()=>({detail:r.statusText}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
-el("start").onclick=async()=>{el("start").disabled=true;el("message").textContent="Creating…";try{let j=await api("/api/jobs",{method:"POST",body:JSON.stringify({profile_url:el("profile").value.trim()})});el("message").textContent="Queued "+j.job_id;await refresh()}catch(e){el("message").textContent=e.message}finally{el("start").disabled=false}};
-async function action(id,verb){try{await api("/api/jobs/"+id+"/"+verb,{method:"POST"});await refresh()}catch(e){alert(e.message)}}
-async function showMedia(id){let rows=await api("/api/jobs/"+id+"/media");let box=el("m-"+id);box.textContent=rows.map(m=>m.media_key+" · "+m.status+" · "+(m.width||"?")+"×"+(m.height||"?")+" · "+(m.path||m.error||"")).join("\\n")||"No media records."}
-async function refresh(){try{let jobs=await api("/api/jobs");el("jobs").innerHTML=jobs.length?jobs.map(j=>{let p=j.total_media?Math.round(j.downloaded_media/j.total_media*100):0;return "<div class='job'><b>@"+j.username+"</b> · "+j.status+"<div class='grid'><div class='stat'>Posts<strong>"+j.total_posts+"</strong></div><div class='stat'>Images<strong>"+j.total_media+"</strong></div><div class='stat'>Downloaded<strong>"+j.downloaded_media+"</strong></div><div class='stat'>Failed<strong>"+j.failed_media+"</strong></div></div><progress value='"+p+"' max='100' style='width:100%'></progress><div class='muted'>"+p+"% · "+j.job_id+"</div>"+(j.error?"<div class='error'>"+j.error+"</div>":"")+"<p><button class='secondary' onclick=\\"action('"+j.job_id+"','pause')\\">Pause</button><button onclick=\\"action('"+j.job_id+"','resume')\\" "+(j.status!=="paused"?"disabled":"")+">Resume</button><button class='secondary' onclick=\\"showMedia('"+j.job_id+"')\\">Recent media</button></p><pre id='m-"+j.job_id+"'></pre></div>"}).join(""):"No jobs yet."}catch(e){el("jobs").textContent="Unable to load: "+e.message}}
-refresh();setInterval(refresh,5000);
+const $=id=>document.getElementById(id);
+const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(url,options={}){const response=await fetch(url,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});let data;try{data=await response.json()}catch{data={detail:response.statusText||"Invalid server response"}}if(!response.ok)throw new Error(data.detail||"Request failed ("+response.status+")");return data}
+async function checkHealth(){try{const h=await api("/api/health");const good=h.ok&&h.x_token_configured;$("health").innerHTML='<i class="dot" style="background:'+(good?'var(--green)':'var(--amber)')+'"></i><span>'+ (good?'API & services ready':(!h.x_token_configured?'X token missing':'Checking dependencies'))+'</span>';if(!h.database||!h.redis)$("health").title="Database: "+h.database+" · Redis: "+h.redis}catch(e){$("health").innerHTML='<i class="dot" style="background:var(--red)"></i><span>Backend unavailable</span>';$("health").title=e.message}}
+$("createForm").addEventListener("submit",async event=>{event.preventDefault();const btn=$("startBtn");btn.disabled=true;btn.textContent="Queueing…";$("formMessage").textContent="";try{const body={profile_url:$("profile").value.trim(),archive_name:$("archiveName").value.trim(),folder_mode:document.querySelector('input[name="folderMode"]:checked').value};const result=await api("/api/jobs",{method:"POST",body:JSON.stringify(body)});$("formMessage").textContent="Task queued for @"+result.username+" · "+result.job_id;await refreshJobs()}catch(error){$("formMessage").textContent=error.message}finally{btn.disabled=false;btn.textContent="＋ Start archive"}});
+async function jobAction(id,action){try{await api("/api/jobs/"+encodeURIComponent(id)+"/"+action,{method:"POST"});await refreshJobs()}catch(e){alert(e.message)}}
+async function showMedia(id,button){const box=$("media-"+id);if(box.dataset.open==="1"){box.hidden=true;box.dataset.open="0";button.textContent="Show media";return}button.disabled=true;try{const rows=await api("/api/jobs/"+encodeURIComponent(id)+"/media");box.innerHTML=rows.length?rows.map(m=>'<div class="jobmeta">'+esc(m.media_key)+' · '+esc(m.status)+' · '+esc(m.width||"?")+' × '+esc(m.height||"?")+' · '+esc(m.path||m.error||"")+'</div>').join(""):'<div class="jobmeta">No image records yet.</div>';box.hidden=false;box.dataset.open="1";button.textContent="Hide media"}catch(e){box.textContent=e.message;box.hidden=false}finally{button.disabled=false}}
+function renderJob(j){const total=Number(j.total_media||0),saved=Number(j.downloaded_media||0),pct=total?Math.min(100,Math.round(saved/total*100)):(j.discovery_done?100:0);const active=["queued","discovering","processing"].includes(j.status);return '<article class="job"><div class="jobtop"><div><div class="jobname">@'+esc(j.username)+'</div><div class="jobmeta">'+esc(j.archive_name||"X Archive")+' · '+(j.folder_mode==="post"?"Folders per post":"Single profile image folder")+'</div></div><span class="pill '+esc(j.status)+'">'+esc(j.status.replaceAll("_"," "))+'</span></div><div class="jobstats"><span>Posts <b>'+Number(j.total_posts||0).toLocaleString()+'</b></span><span>Images <b>'+total.toLocaleString()+'</b></span><span>Saved <b>'+saved.toLocaleString()+'</b></span><span>Failed <b>'+Number(j.failed_media||0).toLocaleString()+'</b></span></div><div class="track"><div class="bar" style="width:'+pct+'%"></div></div><div class="jobmeta" style="margin-top:7px">'+pct+'% download completion · '+esc(j.job_id)+'</div>'+(j.error?'<div class="err">'+esc(j.error)+'</div>':'')+'<div class="actions">'+(active?'<button class="smallbtn" onclick="jobAction(\''+esc(j.job_id)+'\',\'pause\')">Pause</button>':'')+(j.status==="paused"||j.status==="error"?'<button class="smallbtn" onclick="jobAction(\''+esc(j.job_id)+'\',\'resume\')">Resume / retry</button>':'')+'<button class="smallbtn" onclick="showMedia(\''+esc(j.job_id)+'\',this)">Show media</button></div><div id="media-'+esc(j.job_id)+'" class="media-list" hidden></div></article>'}
+async function refreshJobs(){try{const jobs=await api("/api/jobs");$("jobCount").textContent=jobs.length+" task"+(jobs.length===1?"":"s");$("activeCount").textContent=jobs.filter(j=>["queued","discovering","processing"].includes(j.status)).length;$("postCount").textContent=jobs.reduce((a,j)=>a+Number(j.total_posts||0),0).toLocaleString();$("savedCount").textContent=jobs.reduce((a,j)=>a+Number(j.downloaded_media||0),0).toLocaleString();$("failedCount").textContent=jobs.reduce((a,j)=>a+Number(j.failed_media||0),0).toLocaleString();$("jobs").innerHTML=jobs.length?jobs.map(renderJob).join(""):'<div class="empty">No archive jobs yet.<br>Paste an X profile URL above to create your first task.</div>'}catch(e){$("jobCount").textContent="Service error";$("jobs").innerHTML='<div class="err">Could not load archive jobs: '+esc(e.message)+'<br>Check that API, database, Redis and worker containers are running.</div>'}}
+async function refreshAll(){await checkHealth();await refreshJobs()}refreshAll();setInterval(refreshAll,5000);
 </script></body></html>
