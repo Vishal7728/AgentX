@@ -2,7 +2,9 @@ import httpx
 from .config import X_API_BASE, X_BEARER_TOKEN, HTTP_TIMEOUT_SECONDS
 
 class XAPIError(Exception):
-    pass
+    def __init__(self, message: str, retryable: bool = True):
+        super().__init__(message)
+        self.retryable = retryable
 
 def _client():
     if not X_BEARER_TOKEN or X_BEARER_TOKEN == "replace_me":
@@ -17,6 +19,8 @@ def _client():
 def resolve_user(username: str) -> dict:
     with _client() as client:
         response = client.get(f"/users/by/username/{username}")
+        if response.status_code == 402:
+            raise XAPIError("X API credits are depleted (402). Add credits or change your API plan in the X Developer Console, then resume this archive.", retryable=False)
         if response.status_code >= 400:
             raise XAPIError(f"X user lookup failed ({response.status_code}): {response.text[:500]}")
         return response.json().get("data") or {}
@@ -34,6 +38,8 @@ def get_user_posts(user_id: str, pagination_token: str | None = None) -> dict:
         response = client.get(f"/users/{user_id}/tweets", params=params)
         if response.status_code == 429:
             raise XAPIError("X API rate limit reached (429); respect the documented reset window.")
+        if response.status_code == 402:
+            raise XAPIError("X API credits are depleted (402). Add credits or change your API plan in the X Developer Console, then resume this archive.", retryable=False)
         if response.status_code >= 400:
             raise XAPIError(f"X timeline request failed ({response.status_code}): {response.text[:500]}")
         return response.json()
