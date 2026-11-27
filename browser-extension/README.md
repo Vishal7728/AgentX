@@ -1,21 +1,32 @@
-# AgentX Chrome extension — visible-tab capture
+# AgentX Chrome extension — user-triggered post-media capture
 
-This extension captures only the visible browser viewport after the user clicks
-its toolbar button. It does not read page contents, enumerate posts, scroll,
-navigate, access cookies, or automate login.
+The extension captures the largest visible X media image inside the currently
+open post card. If no eligible media image is found, it captures the visible
+post card instead. The user must click the extension button for every capture.
 
-## Install in Chrome
+## Install or update
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode**.
-3. Select **Load unpacked**.
-4. Choose the repository's `browser-extension` folder.
-5. Open an individual X post in your normal Chrome session.
-6. Click the AgentX extension icon, then **Capture visible tab**.
+1. Pull the latest repository changes.
+2. Open `chrome://extensions`.
+3. If AgentX is already loaded unpacked, click **Reload** on its extension card.
+   Otherwise enable **Developer mode**, choose **Load unpacked**, and select
+   this `browser-extension` folder.
+4. Open an individual X post in your normal Chrome session.
+5. Click the AgentX extension icon, then **Capture post media**.
 
-Screenshots are saved under `Downloads/AgentX-Captures/`. The extension uses
-Chrome's `activeTab` permission and the user-initiated visible-tab capture API.
-It does not access or transfer your X credentials or browser cookies.
+## Output and duplicate handling
 
-The output is a screenshot of the entire visible tab viewport, not an extracted
-original image file. Make sure the post/media is visible before capture.
+Files are saved under `Downloads/AgentX-Captures/<post-id>/` using a SHA-256
+prefix as the filename. A local Chrome extension storage record prevents
+capturing identical screenshot bytes again. Chrome's download manager handles
+the actual file save.
+
+The extension uses `activeTab`, `scripting`, `downloads`, and `storage`.
+It reads only the currently visible post card geometry and eligible image
+element geometry after the user clicks capture. It does not read cookies,
+credentials, messages, or profile timelines; it does not scroll or navigate.
+
+The output is a screenshot crop of rendered browser pixels, not the original
+uploaded media bytes. For posts with multiple images, the largest visible media
+image is selected; capture each additional image by bringing it into view and
+using the button again. Keep your local archive private.
