@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from PIL import Image
-from celery import shared_task
+from .worker import celery_app
 from sqlalchemy import select, func
 from .db import SessionLocal
 from .models import Job, Post, Media
@@ -34,7 +34,7 @@ def _finalize(job_id):
             job.status = "completed" if failed == 0 else "completed_with_errors"
         db.commit()
 
-@shared_task(bind=True, max_retries=5, default_retry_delay=30)
+@celery_app.task(bind=True, max_retries=5, default_retry_delay=30)
 def discover_profile(self, job_id):
     with SessionLocal() as db:
         job = db.get(Job, job_id)
@@ -110,7 +110,7 @@ def discover_profile(self, job_id):
             raise self.retry(exc=exc, countdown=min(300, 15 * (2 ** self.request.retries)))
         raise
 
-@shared_task(bind=True, max_retries=5, default_retry_delay=20)
+@celery_app.task(bind=True, max_retries=5, default_retry_delay=20)
 def download_media(self, media_id):
     with SessionLocal() as db:
         media = db.get(Media, media_id)
