@@ -11,7 +11,8 @@ A local Docker application for archiving image posts from X profiles you own or 
 - Saves downloaded image bytes locally without resizing or recompression.
 - Verifies image readability, dimensions and SHA-256 checksums.
 - Stores job, post and media metadata in PostgreSQL.
-- Provides a local dashboard with job status, pause and resume controls.
+- Provides a modern local dashboard with service health, job status, pause and resume controls.
+- Lets you choose per-post folders or one consolidated profile image folder.
 
 ## Requirements
 
@@ -34,6 +35,7 @@ A local Docker application for archiving image posts from X profiles you own or 
    docker compose up --build -d
    ```
 5. Open http://localhost:8000 and enter an authorized profile URL such as `https://x.com/your_account`.
+6. Choose a local archive folder label and layout: separate folders per post, or one `images/` folder per profile.
 
 API documentation: http://localhost:8000/docs
 
