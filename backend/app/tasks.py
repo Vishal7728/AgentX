@@ -34,7 +34,7 @@ def _finalize(job_id):
             job.status = "completed" if failed == 0 else "completed_with_errors"
         db.commit()
 
-@shared_task(bind=True, max_retries=4)
+@shared_task(bind=True, max_retries=5, default_retry_delay=30)
 def discover_profile(self, job_id):
     with SessionLocal() as db:
         job = db.get(Job, job_id)
@@ -44,6 +44,8 @@ def discover_profile(self, job_id):
         db.commit()
     try:
         user = resolve_user(username)
+        if not user or not user.get("id"):
+            raise RuntimeError("X API did not return a user ID. Check the username and API access.")
         with SessionLocal() as db:
             job = db.get(Job, job_id)
             job.x_user_id = str(user["id"])
@@ -89,7 +91,6 @@ def discover_profile(self, job_id):
                             queued_media_ids.append(row.id)
                 job.pagination_token = payload.get("meta", {}).get("next_token")
                 db.commit()
-            # Dispatch only after the transaction commits, so workers can see the rows.
             for media_id in queued_media_ids:
                 download_media.delay(media_id)
             if not payload.get("meta", {}).get("next_token"):
@@ -105,9 +106,11 @@ def discover_profile(self, job_id):
             if job:
                 job.status, job.error = "error", str(exc)[:2000]
                 db.commit()
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=min(300, 15 * (2 ** self.request.retries)))
         raise
 
-@shared_task(bind=True, max_retries=4)
+@shared_task(bind=True, max_retries=5, default_retry_delay=20)
 def download_media(self, media_id):
     with SessionLocal() as db:
         media = db.get(Media, media_id)
@@ -118,6 +121,7 @@ def download_media(self, media_id):
             return
         media.status = "downloading"
         source, post_id, key, job_id, username = media.source_url, media.post_id, media.media_key, media.job_id, job.username
+        folder_mode, archive_name = job.folder_mode, job.archive_name
         db.commit()
     temp = None
     try:
@@ -153,10 +157,15 @@ def download_media(self, media_id):
             dt = datetime.fromisoformat(created.replace("Z", "+00:00")) if created else datetime.now(timezone.utc)
         except ValueError:
             dt = datetime.now(timezone.utc)
-        folder = Path(STORAGE_DIR) / "archive" / username / f"{dt.year:04d}" / f"{dt.month:02d}" / post_id
+        safe_archive = re.sub(r"[^A-Za-z0-9_-]", "_", archive_name)
+        base = Path(STORAGE_DIR) / "archive" / safe_archive / username
+        if folder_mode == "post":
+            folder = base / f"{dt.year:04d}" / f"{dt.month:02d}" / post_id
+        else:
+            folder = base / "images"
         folder.mkdir(parents=True, exist_ok=True)
         safe_key = re.sub(r"[^A-Za-z0-9_-]", "_", key)
-        target = folder / f"{safe_key}{ext}"
+        target = folder / f"{post_id}_{safe_key}{ext}"
         os.replace(temp, target)
         with SessionLocal() as db:
             media = db.get(Media, media_id)
@@ -175,4 +184,7 @@ def download_media(self, media_id):
                 media.status = "failed" if self.request.retries >= self.max_retries else "pending"
                 media.error = str(exc)[:1000]
                 db.commit()
-        raise self.retry(exc=exc, countdown=min(300, 15 * (2 ** self.request.retries)))
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=min(300, 15 * (2 ** self.request.retries)))
+        _finalize(job_id)
+        raise
