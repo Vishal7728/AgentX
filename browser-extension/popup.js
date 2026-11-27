@@ -42,7 +42,17 @@ async function inspectPost(tabId) {
       return {postId, pageUrl:location.href, media};
     }
   });
-  return results[0].result;
+  if (!Array.isArray(results) || results.length === 0) {
+    throw new Error("Chrome could not inspect this tab. Reload the X post and try again.");
+  }
+  const payload = results[0]?.result;
+  if (!payload || typeof payload !== "object") {
+    throw new Error("X page did not return post details. Make sure the post is fully loaded, then reload the tab and try again.");
+  }
+  if (!Array.isArray(payload.media)) {
+    throw new Error("Post image detection did not complete. Reload the X post and try again.");
+  }
+  return payload;
 }
 
 async function cropViewport(dataUrl, box) {
@@ -85,6 +95,9 @@ button.addEventListener("click", async () => {
     if (!X_HOSTS.includes(url.hostname)) throw new Error("Open an X post in this tab first.");
 
     const inspected = await inspectPost(tab.id);
+    if (!inspected || !Array.isArray(inspected.media) || inspected.media.length === 0) {
+      throw new Error("No eligible post images found. Open the post directly, wait for its images to load, and try again.");
+    }
     status.textContent = `Found ${inspected.media.length} visible image(s). Capturing individually…`;
     const viewport = await chrome.tabs.captureVisibleTab(tab.windowId, {format:"png"});
     const safeId = inspected.postId.replace(/[^0-9A-Za-z_-]/g, "_");
@@ -122,6 +135,7 @@ button.addEventListener("click", async () => {
         saved++;
       } catch (error) {
         failed++;
+        console.warn("AgentX image capture failed:", error);
       }
     }
     status.textContent = `Post ${safeId}: ${saved} saved, ${duplicates} duplicate(s), ${failed} failed. Check Downloads/AgentX-Captures/${safeId}/`;
