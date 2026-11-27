@@ -10,11 +10,14 @@ async function inspectPost(tabId) {
         const match=location.pathname.match(/\/status\/(\d+)/);
         if(!match) return {ok:false,error:"Open an individual X post URL containing /status/ID."};
         const postId=match[1];
+        const photoViewer=/\\/photo\\/\\d+/.test(location.pathname);
         const articles=[...document.querySelectorAll("article")];
         const article=articles.find(a=>[...a.querySelectorAll('a[href*="/status/"]')].some(a=>{
           try{return new URL(a.href).pathname.includes("/status/"+postId)}catch{return false}
         })) || (articles.length===1?articles[0]:null);
-        if(!article) return {ok:false,error:"Could not identify the target post card. Open its direct /status/ page."};
+        if(!article&&!photoViewer) return {ok:false,error:"Could not identify the target post card. Open its direct /status/ page."};
+        // X /status/ID/photo/N uses a full-screen media viewer, not the normal tweetPhoto article layout.
+        const scope=photoViewer?document:article;
 
         const candidates=[];
         const add=(el,src,nw,nh,alt,kind)=>{
@@ -30,7 +33,7 @@ async function inspectPost(tabId) {
         };
 
         // X photo grid: each [data-testid="tweetPhoto"] is an individual media tile.
-        const tiles=[...article.querySelectorAll('[data-testid="tweetPhoto"]')];
+        const tiles=[...scope.querySelectorAll('[data-testid="tweetPhoto"]')];
         for(const tile of tiles){
           const img=[...tile.querySelectorAll("img")].find(i=>i.complete&&i.naturalWidth>=100&&i.naturalHeight>=80);
           const bg=getComputedStyle(tile).backgroundImage||"";
@@ -42,11 +45,27 @@ async function inspectPost(tabId) {
 
         // Fallback for X layouts that expose media images without tweetPhoto wrappers.
         if(!candidates.length){
-          for(const img of [...article.querySelectorAll("img")]){
+          const imgs=[...scope.querySelectorAll("img")];
+          const mediaImgs=imgs.filter(img=>{
             const src=img.currentSrc||img.src||"";
-            if(!src.includes("pbs.twimg.com/media/")||!img.complete||
-               img.naturalWidth<100||img.naturalHeight<80)continue;
-            add(img,src,img.naturalWidth,img.naturalHeight,img.alt,"media-img");
+            return src.includes("pbs.twimg.com/media/")&&img.complete&&
+              img.naturalWidth>=100&&img.naturalHeight>=80;
+          });
+          for(const img of mediaImgs) add(img,img.currentSrc||img.src,img.naturalWidth,img.naturalHeight,img.alt,"media-img");
+          // In the /photo/N lightbox, prefer the largest visible image if X changes its image host/markup.
+          if(photoViewer&&!candidates.length){
+            const visible=imgs.filter(img=>{
+              const r=img.getBoundingClientRect();
+              return img.complete&&img.naturalWidth>=300&&img.naturalHeight>=300&&
+                r.width>=180&&r.height>=180&&r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;
+            }).sort((a,b)=>{
+              const ra=a.getBoundingClientRect(),rb=b.getBoundingClientRect();
+              return (rb.width*rb.height)-(ra.width*ra.height);
+            });
+            if(visible.length){
+              const img=visible[0];
+              add(img,img.currentSrc||img.src,img.naturalWidth,img.naturalHeight,img.alt,"photo-viewer-largest-image");
+            }
           }
         }
 
@@ -59,7 +78,7 @@ async function inspectPost(tabId) {
         }
         const media=unique.map(({el,...data})=>data);
         return {ok:true,postId,pageUrl:location.href,media,
-          detectedPhotoTiles:tiles.length,articleImageCount:article.querySelectorAll("img").length};
+          detectedPhotoTiles:tiles.length,articleImageCount:scope.querySelectorAll("img").length,photoViewer};
       }catch(error){return {ok:false,error:"Page inspection failed: "+(error?.message||String(error))}}
     }
   });
